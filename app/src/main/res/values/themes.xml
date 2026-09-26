@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.HonorOverlay" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:statusBarColor">#0F1117</item>
+        <item name="android:navigationBarColor">#0F1117</item>
+        <item name="android:windowBackground">#0F1117</item>
+        <item name="colorPrimary">@color/primary</item>
+    </style>
+
+    <style name="FrostedOverlayTheme" parent="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
+        <item name="android:windowBackground">@drawable/bg_frosted_card</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowElevation">16dp</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>
