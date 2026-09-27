@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
@@ -74,8 +75,7 @@ class BluetoothReceiver : BroadcastReceiver() {
         } ?: false
 
         if (matchesMac || matchesName) {
-            if (!isDeviceUnlockedAndActive(context)) {
-                Log.i(TAG, "Device is locked or screen is off. Skipping overlay display.")
+            if (!shouldShowOverlay(context)) {
                 return
             }
             val batteryLevel = extractDeviceBattery(context, device, intent)
@@ -111,15 +111,15 @@ class BluetoothReceiver : BroadcastReceiver() {
         return 100
     }
 
-    private fun isDeviceUnlockedAndActive(context: Context): Boolean {
+    private fun shouldShowOverlay(context: Context): Boolean {
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
         val isScreenOn = powerManager.isInteractive
-
         val isLocked = keyguardManager.isKeyguardLocked
+        val isPortrait = context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-        return isScreenOn && !isLocked
+        return isScreenOn && !isLocked && isPortrait
     }
 
     private fun handleDeviceDisconnected(context: Context) {

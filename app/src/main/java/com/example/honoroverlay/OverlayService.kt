@@ -2,6 +2,7 @@ package com.example.honoroverlay
 
 import android.app.KeyguardManager
 import android.app.Service
+import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -92,8 +93,15 @@ open class OverlayService : Service() {
         }
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            dismissImmediately()
+        }
+    }
+
     override fun onDestroy() {
-        dismiss()
+        dismissImmediately()
         super.onDestroy()
     }
 
@@ -139,14 +147,25 @@ open class OverlayService : Service() {
             }
         }
 
+        fun dismissImmediately() {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                cleanupAllViewsImmediate()
+            } else {
+                mainHandler.post {
+                    cleanupAllViewsImmediate()
+                }
+            }
+        }
+
         private fun showOverlayInternal(context: Context, deviceName: String, batteryLevel: Int = -1) {
+            registerOrientationListener(context)
+
             if (!Settings.canDrawOverlays(context)) {
                 Log.w(TAG, "Cannot show overlay: SYSTEM_ALERT_WINDOW permission not granted")
                 return
             }
 
-            if (!isDeviceUnlockedAndActive(context)) {
-                Log.i(TAG, "Device is locked or display is not active. Skipping overlay display.")
+            if (!shouldShowOverlay(context)) {
                 return
             }
 
@@ -419,6 +438,8 @@ open class OverlayService : Service() {
                 while (iterator.hasNext()) {
                     val view = iterator.next()
                     try {
+                        val cardRoot = view.findViewById<View>(R.id.cardRoot)
+                        cardRoot?.animate()?.cancel()
                         windowManager?.removeViewImmediate(view)
                     } catch (e: Exception) {
                         try {
@@ -502,15 +523,33 @@ open class OverlayService : Service() {
             }
         }
 
-        private fun isDeviceUnlockedAndActive(context: Context): Boolean {
+        private var isOrientationListenerRegistered = false
+
+        private fun registerOrientationListener(context: Context) {
+            if (isOrientationListenerRegistered) return
+            try {
+                context.applicationContext.registerComponentCallbacks(object : ComponentCallbacks {
+                    override fun onConfigurationChanged(newConfig: Configuration) {
+                        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                            dismissImmediately()
+                        }
+                    }
+
+                    override fun onLowMemory() {}
+                })
+                isOrientationListenerRegistered = true
+            } catch (_: Exception) {}
+        }
+
+        private fun shouldShowOverlay(context: Context): Boolean {
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
             val isScreenOn = powerManager.isInteractive
-
             val isLocked = keyguardManager.isKeyguardLocked
+            val isPortrait = context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-            return isScreenOn && !isLocked
+            return isScreenOn && !isLocked && isPortrait
         }
     }
 }

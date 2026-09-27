@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -50,6 +51,13 @@ class EarbudsMonitorService : Service() {
         Log.d(TAG, "EarbudsMonitorService onStartCommand")
         startSilentForeground()
         return START_STICKY
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            OverlayService.dismissImmediately()
+        }
     }
 
     private fun createSilentNotificationChannel() {
@@ -161,8 +169,7 @@ class EarbudsMonitorService : Service() {
         Log.d(TAG, "Device ACL Connected: Name='$deviceName', Address='$deviceAddress', matchesMac=$matchesMac, matchesName=$matchesName")
 
         if (matchesMac || matchesName) {
-            if (!isDeviceUnlockedAndActive(this)) {
-                Log.i(TAG, "Device is locked or display is not interactive. Skipping overlay to prevent background rendering.")
+            if (!shouldShowOverlay(this)) {
                 return
             }
             val batteryLevel = extractDeviceBattery(device, intent)
@@ -199,15 +206,15 @@ class EarbudsMonitorService : Service() {
         return 100
     }
 
-    private fun isDeviceUnlockedAndActive(context: Context): Boolean {
+    private fun shouldShowOverlay(context: Context): Boolean {
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
         val isScreenOn = powerManager.isInteractive
-
         val isLocked = keyguardManager.isKeyguardLocked
+        val isPortrait = context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-        return isScreenOn && !isLocked
+        return isScreenOn && !isLocked && isPortrait
     }
 
     private fun handleDeviceDisconnected(intent: Intent) {
