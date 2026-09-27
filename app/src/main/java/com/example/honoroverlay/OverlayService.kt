@@ -292,7 +292,7 @@ open class OverlayService : Service() {
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.BOTTOM
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 y = 0
             }
 
