@@ -45,6 +45,7 @@ class EarbudsMonitorService : Service() {
         createSilentNotificationChannel()
         startSilentForeground()
         registerBluetoothReceiver()
+        OverlayService.initSoundPool(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

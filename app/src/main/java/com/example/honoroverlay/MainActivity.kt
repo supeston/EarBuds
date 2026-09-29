@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
         initViews()
         loadPreferences()
         startMonitorService()
+        OverlayService.initSoundPool(this)
     }
 
     override fun onResume() {

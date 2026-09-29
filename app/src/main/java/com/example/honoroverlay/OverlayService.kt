@@ -39,6 +39,9 @@ import android.view.animation.PathInterpolator
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.SoundPool
 import coil.ImageLoader
 import coil.decode.ImageDecoderDecoder
 import coil.load
@@ -200,6 +203,60 @@ open class OverlayService : Service() {
         private var isOverlayShowing = false
         private var lastShowTimestamp = 0L
         private var currentBatteryLevel: Int = 100
+
+        private var soundPool: SoundPool? = null
+        private var soundAppearId: Int = 0
+        private var soundDismissId: Int = 0
+        private val loadedSoundIds = Collections.synchronizedSet(mutableSetOf<Int>())
+        private var pendingSoundId: Int = 0
+        private var pendingSoundTimestamp: Long = 0L
+
+        fun initSoundPool(context: Context) {
+            if (soundPool != null) return
+            try {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                soundPool = SoundPool.Builder()
+                    .setMaxStreams(2)
+                    .setAudioAttributes(attrs)
+                    .build().apply {
+                        setOnLoadCompleteListener { _, sampleId, status ->
+                            if (status == 0) {
+                                loadedSoundIds.add(sampleId)
+                                if (pendingSoundId == sampleId && SystemClock.elapsedRealtime() - pendingSoundTimestamp < 500L) {
+                                    pendingSoundId = 0
+                                    play(sampleId, 1.0f, 1.0f, 1, 0, 1.0f)
+                                }
+                            }
+                        }
+                        soundAppearId = load(context.applicationContext, R.raw.sound_appear, 1)
+                        soundDismissId = load(context.applicationContext, R.raw.sound_dismiss, 1)
+                    }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to init SoundPool", e)
+            }
+        }
+
+        private fun playSound(soundId: Int, context: Context) {
+            if (soundId == 0) return
+            initSoundPool(context)
+            try {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                if (audioManager != null && audioManager.ringerMode == AudioManager.RINGER_MODE_SILENT) {
+                    return
+                }
+                if (loadedSoundIds.contains(soundId)) {
+                    soundPool?.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
+                } else {
+                    pendingSoundId = soundId
+                    pendingSoundTimestamp = SystemClock.elapsedRealtime()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error playing sound $soundId", e)
+            }
+        }
 
         fun show(context: Context, deviceName: String = "Honor Earbuds X5 Pro", batteryLevel: Int = -1) {
             mainHandler.post {
@@ -391,6 +448,7 @@ open class OverlayService : Service() {
                 isOverlayShowing = true
                 Log.i(TAG, "Overlay window added to WindowManager. Total active: ${attachedViews.size}")
 
+                playSound(soundAppearId, context)
                 startSuckAppearanceAnimation(overlayView, cardRoot, measuredW, measuredH, baseElevation)
                 triggerTapticEngineHaptic(context)
             } catch (e: Exception) {
@@ -485,6 +543,7 @@ open class OverlayService : Service() {
             btnDone?.isClickable = false
             cardRoot?.setOnTouchListener(null)
 
+            playSound(soundDismissId, overlayView.context)
             startSuckDismissAnimation(overlayView) {
                 try {
                     if (overlayView.isAttachedToWindow) {
