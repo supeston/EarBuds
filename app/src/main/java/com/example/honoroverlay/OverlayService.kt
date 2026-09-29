@@ -1,5 +1,8 @@
 package com.example.honoroverlay
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.app.KeyguardManager
 import android.app.Service
 import android.content.ComponentCallbacks
@@ -10,6 +13,8 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.PixelFormat
+import android.graphics.RenderEffect
+import android.graphics.RuntimeShader
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.AnimatedImageDrawable
 import android.os.Build
@@ -112,6 +117,83 @@ open class OverlayService : Service() {
         const val EXTRA_DEVICE_NAME = "extra_device_name"
         const val EXTRA_BATTERY_LEVEL = "extra_battery_level"
 
+        private const val SUCK_SHADER_SRC = """
+            uniform shader content;
+            uniform float2 resolution;
+            uniform float progress;
+
+            half4 main(float2 fragCoord) {
+                if (progress <= 0.0005) {
+                    return content.eval(fragCoord);
+                }
+                if (progress >= 0.9995) {
+                    return half4(0.0, 0.0, 0.0, 0.0);
+                }
+
+                float p = progress;
+                float px = 0.5;
+                float py = 1.0;
+
+                float top_y = p * p * py;
+                float bot_y = py;
+
+                float v_top_orig = 0.0;
+                float v_bot_orig = 1.0 - p * sqrt(p);
+
+                if (v_bot_orig <= 0.001) {
+                    return half4(0.0, 0.0, 0.0, 0.0);
+                }
+
+                float span_y = bot_y - top_y;
+                if (span_y <= 0.001) {
+                    return half4(0.0, 0.0, 0.0, 0.0);
+                }
+
+                float v_screen = fragCoord.y / resolution.y;
+                if (v_screen < top_y || v_screen > bot_y) {
+                    return half4(0.0, 0.0, 0.0, 0.0);
+                }
+
+                float eta = (v_screen - top_y) / span_y;
+                float v_orig = v_top_orig + eta * (v_bot_orig - v_top_orig);
+
+                float top_scale = 1.0 - (p * p * sqrt(p)) * 0.92;
+                float cosVal = max(cos(eta * 1.57079632679), 0.0);
+                float profile = pow(cosVal + 0.0001, 0.7 + 0.5 * p);
+                float half_w = 0.5 * top_scale * profile;
+
+                if (half_w <= 0.001) {
+                    return half4(0.0, 0.0, 0.0, 0.0);
+                }
+
+                float u_screen = fragCoord.x / resolution.x;
+                float dx = u_screen - px;
+
+                float dx_orig = dx / (half_w / 0.5);
+                float u_orig = 0.5 + dx_orig;
+
+                float sag = p * 0.15 * (1.0 - clamp(dx_orig * dx_orig * 4.0, 0.0, 1.0)) * sin(eta * 3.1415926535);
+                float v_orig_sag = v_orig - sag * (v_bot_orig - v_top_orig);
+
+                if (u_orig < 0.0 || u_orig > 1.0 || v_orig_sag < 0.0 || v_orig_sag > 1.0) {
+                    return half4(0.0, 0.0, 0.0, 0.0);
+                }
+
+                float edge_dist_x = min(u_orig, 1.0 - u_orig) * (half_w * resolution.x);
+                float edge_dist_y = min(v_orig_sag, 1.0 - v_orig_sag) * (span_y * resolution.y);
+                float edge_dist = min(edge_dist_x, edge_dist_y);
+                float alpha = clamp(edge_dist, 0.0, 1.0);
+
+                float2 sampleCoord = float2(u_orig * resolution.x, v_orig_sag * resolution.y);
+                half4 color = content.eval(sampleCoord);
+
+                float highlight = 1.0 + 0.2 * p * sin(eta * 3.1415926535) * (1.0 - abs(dx_orig) * sqrt(abs(dx_orig)));
+                color.rgb *= highlight;
+
+                return color * alpha;
+            }
+        """
+
         private val mainHandler = Handler(Looper.getMainLooper())
         private var windowManager: WindowManager? = null
 
@@ -210,19 +292,18 @@ open class OverlayService : Service() {
 
             val isDarkTheme = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
             val density = context.resources.displayMetrics.density
+            val baseElevation = if (isDarkTheme) 4f * density else 10f * density
 
             if (isDarkTheme) {
-
                 cardRoot.setBackgroundResource(R.drawable.bg_card_dark)
-                cardRoot.elevation = 4f * density
+                cardRoot.elevation = baseElevation
                 tvDeviceName.setTextColor(Color.WHITE)
                 tvBatteryPercent?.setTextColor(Color.WHITE)
                 btnDone.setBackgroundResource(R.drawable.bg_btn_dark)
                 btnDone.setTextColor(Color.WHITE)
             } else {
-
                 cardRoot.setBackgroundResource(R.drawable.bg_card_light)
-                cardRoot.elevation = 10f * density
+                cardRoot.elevation = baseElevation
                 tvDeviceName.setTextColor(Color.BLACK)
                 tvBatteryPercent?.setTextColor(Color.BLACK)
                 btnDone.setBackgroundResource(R.drawable.bg_btn_light)
@@ -233,29 +314,25 @@ open class OverlayService : Service() {
             fun dismissThisOverlayView() {
                 if (isThisViewDismissing) return
                 isThisViewDismissing = true
+                btnDone.isClickable = false
+                cardRoot.setOnTouchListener(null)
 
-                cardRoot.animate()
-                    .translationY(900f)
-                    .alpha(0f)
-                    .setDuration(250)
-                    .setInterpolator(AccelerateInterpolator())
-                    .withEndAction {
+                startSuckDismissAnimation(overlayView) {
+                    try {
+                        if (overlayView.isAttachedToWindow) {
+                            windowManager?.removeView(overlayView)
+                        }
+                    } catch (e: Exception) {
                         try {
-                            if (overlayView.isAttachedToWindow) {
-                                windowManager?.removeView(overlayView)
-                            }
-                        } catch (e: Exception) {
-                            try {
-                                windowManager?.removeViewImmediate(overlayView)
-                            } catch (_: Exception) {}
-                        } finally {
-                            attachedViews.remove(overlayView)
-                            if (attachedViews.isEmpty()) {
-                                isOverlayShowing = false
-                            }
+                            windowManager?.removeViewImmediate(overlayView)
+                        } catch (_: Exception) {}
+                    } finally {
+                        attachedViews.remove(overlayView)
+                        if (attachedViews.isEmpty()) {
+                            isOverlayShowing = false
                         }
                     }
-                    .start()
+                }
             }
 
             btnDone.setOnClickListener {
@@ -284,10 +361,9 @@ open class OverlayService : Service() {
                         if (isDragging) {
                             isDragging = false
                             val currentTransY = view.translationY
-                            if (currentTransY > 160f) {
+                            if (currentTransY > 120f) {
                                 dismissThisOverlayView()
                             } else {
-
                                 view.animate()
                                     .translationY(0f)
                                     .setDuration(200)
@@ -315,8 +391,26 @@ open class OverlayService : Service() {
                 y = 0
             }
 
-            cardRoot.translationY = 800f
-            cardRoot.alpha = 0f
+            val displayMetrics = context.resources.displayMetrics
+            val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(displayMetrics.widthPixels, View.MeasureSpec.EXACTLY)
+            val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(displayMetrics.heightPixels, View.MeasureSpec.AT_MOST)
+            overlayView.measure(widthMeasureSpec, heightMeasureSpec)
+            val measuredW = cardRoot.measuredWidth.toFloat().coerceAtLeast(displayMetrics.widthPixels * 0.85f)
+            val measuredH = cardRoot.measuredHeight.toFloat().coerceAtLeast(340f * density)
+            val portalOffset = 16f * density
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val shader = RuntimeShader(SUCK_SHADER_SRC)
+                shader.setFloatUniform("progress", 1.0f)
+                shader.setFloatUniform("resolution", measuredW, measuredH)
+                cardRoot.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
+                cardRoot.translationY = portalOffset
+                cardRoot.elevation = 0f
+                cardRoot.alpha = 1.0f
+            } else {
+                cardRoot.translationY = 800f
+                cardRoot.alpha = 0f
+            }
 
             try {
                 windowManager?.addView(overlayView, params)
@@ -324,13 +418,7 @@ open class OverlayService : Service() {
                 isOverlayShowing = true
                 Log.i(TAG, "Overlay window added to WindowManager. Total active: ${attachedViews.size}")
 
-                cardRoot.animate()
-                    .translationY(0f)
-                    .alpha(1f)
-                    .setDuration(350)
-                    .setInterpolator(PathInterpolator(0.2f, 1f, 0.2f, 1f))
-                    .start()
-
+                startSuckAppearanceAnimation(cardRoot, measuredW, measuredH, portalOffset, baseElevation)
                 triggerTapticEngineHaptic(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to add overlay to WindowManager", e)
@@ -404,30 +492,28 @@ open class OverlayService : Service() {
                 }
 
                 for (overlayView in viewsToDismiss) {
-                    val cardRoot = overlayView.findViewById<View>(R.id.cardRoot) ?: overlayView
-                    cardRoot.animate()
-                        .translationY(900f)
-                        .alpha(0f)
-                        .setDuration(250)
-                        .setInterpolator(AccelerateInterpolator())
-                        .withEndAction {
+                    val cardRoot = overlayView.findViewById<View>(R.id.cardRoot)
+                    val btnDone = overlayView.findViewById<View>(R.id.btnDone)
+                    btnDone?.isClickable = false
+                    cardRoot?.setOnTouchListener(null)
+
+                    startSuckDismissAnimation(overlayView) {
+                        try {
+                            if (overlayView.isAttachedToWindow) {
+                                windowManager?.removeView(overlayView)
+                                Log.i(TAG, "Overlay view removed from WindowManager")
+                            }
+                        } catch (e: Exception) {
                             try {
-                                if (overlayView.isAttachedToWindow) {
-                                    windowManager?.removeView(overlayView)
-                                    Log.i(TAG, "Overlay view removed from WindowManager")
-                                }
-                            } catch (e: Exception) {
-                                try {
-                                    windowManager?.removeViewImmediate(overlayView)
-                                } catch (_: Exception) {}
-                            } finally {
-                                attachedViews.remove(overlayView)
-                                if (attachedViews.isEmpty()) {
-                                    isOverlayShowing = false
-                                }
+                                windowManager?.removeViewImmediate(overlayView)
+                            } catch (_: Exception) {}
+                        } finally {
+                            attachedViews.remove(overlayView)
+                            if (attachedViews.isEmpty()) {
+                                isOverlayShowing = false
                             }
                         }
-                        .start()
+                    }
                 }
             }
         }
@@ -439,7 +525,9 @@ open class OverlayService : Service() {
                     val view = iterator.next()
                     try {
                         val cardRoot = view.findViewById<View>(R.id.cardRoot)
+                        (cardRoot?.tag as? ValueAnimator)?.cancel()
                         cardRoot?.animate()?.cancel()
+                        cardRoot?.setRenderEffect(null)
                         windowManager?.removeViewImmediate(view)
                     } catch (e: Exception) {
                         try {
@@ -450,6 +538,103 @@ open class OverlayService : Service() {
                 }
             }
             isOverlayShowing = false
+        }
+
+        private fun startSuckAppearanceAnimation(
+            cardRoot: View,
+            initialW: Float,
+            initialH: Float,
+            portalOffset: Float,
+            baseElevation: Float
+        ) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                cardRoot.post {
+                    val w = if (cardRoot.width > 0) cardRoot.width.toFloat() else initialW
+                    val h = if (cardRoot.height > 0) cardRoot.height.toFloat() else initialH
+                    val shader = RuntimeShader(SUCK_SHADER_SRC)
+
+                    val animator = ValueAnimator.ofFloat(1.0f, 0.0f).apply {
+                        duration = 440
+                        interpolator = PathInterpolator(0.16f, 1.0f, 0.3f, 1.0f)
+                        addUpdateListener { va ->
+                            val p = va.animatedValue as Float
+                            shader.setFloatUniform("progress", p)
+                            shader.setFloatUniform("resolution", w, h)
+                            cardRoot.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
+                            cardRoot.translationY = p * portalOffset
+                            cardRoot.elevation = (1.0f - p) * baseElevation
+                            cardRoot.invalidate()
+                        }
+                        addListener(object : AnimatorListenerAdapter() {
+                            override fun onAnimationEnd(animation: Animator) {
+                                cardRoot.setRenderEffect(null)
+                                cardRoot.translationY = 0f
+                                cardRoot.elevation = baseElevation
+                                cardRoot.tag = null
+                            }
+                        })
+                    }
+                    cardRoot.tag = animator
+                    animator.start()
+                }
+            } else {
+                cardRoot.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(350)
+                    .setInterpolator(PathInterpolator(0.2f, 1f, 0.2f, 1f))
+                    .start()
+            }
+        }
+
+        private fun startSuckDismissAnimation(overlayView: View, onFinished: () -> Unit) {
+            val cardRoot = overlayView.findViewById<View>(R.id.cardRoot) ?: run {
+                onFinished()
+                return
+            }
+
+            (cardRoot.tag as? ValueAnimator)?.cancel()
+            cardRoot.animate().cancel()
+
+            val w = if (cardRoot.width > 0) cardRoot.width.toFloat() else cardRoot.measuredWidth.toFloat()
+            val h = if (cardRoot.height > 0) cardRoot.height.toFloat() else cardRoot.measuredHeight.toFloat()
+            val density = cardRoot.resources.displayMetrics.density
+            val portalOffset = 16f * density
+            val currentElevation = cardRoot.elevation
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && w > 0f && h > 0f) {
+                val shader = RuntimeShader(SUCK_SHADER_SRC)
+                val animator = ValueAnimator.ofFloat(0.0f, 1.0f).apply {
+                    duration = 380
+                    interpolator = PathInterpolator(0.38f, 0.0f, 0.2f, 1.0f)
+                    addUpdateListener { va ->
+                        val p = va.animatedValue as Float
+                        shader.setFloatUniform("progress", p)
+                        shader.setFloatUniform("resolution", w, h)
+                        cardRoot.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
+                        cardRoot.translationY = p * portalOffset
+                        cardRoot.elevation = (1.0f - p) * currentElevation
+                        cardRoot.invalidate()
+                    }
+                    addListener(object : AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: Animator) {
+                            cardRoot.setRenderEffect(null)
+                            cardRoot.tag = null
+                            onFinished()
+                        }
+                    })
+                }
+                cardRoot.tag = animator
+                animator.start()
+            } else {
+                cardRoot.animate()
+                    .translationY(900f)
+                    .alpha(0f)
+                    .setDuration(250)
+                    .setInterpolator(AccelerateInterpolator())
+                    .withEndAction { onFinished() }
+                    .start()
+            }
         }
 
         private fun triggerTapticEngineHaptic(context: Context) {
