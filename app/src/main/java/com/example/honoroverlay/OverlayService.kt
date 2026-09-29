@@ -134,11 +134,11 @@ open class OverlayService : Service() {
                 float px = 0.5;
                 float py = 1.0;
 
-                float top_y = p * p * py;
+                float top_y = pow(p, 1.8) * py;
                 float bot_y = py;
 
                 float v_top_orig = 0.0;
-                float v_bot_orig = 1.0 - p * sqrt(p);
+                float v_bot_orig = 1.0 - pow(p, 1.2);
 
                 if (v_bot_orig <= 0.001) {
                     return half4(0.0, 0.0, 0.0, 0.0);
@@ -155,39 +155,37 @@ open class OverlayService : Service() {
                 }
 
                 float eta = (v_screen - top_y) / span_y;
-                float v_orig = v_top_orig + eta * (v_bot_orig - v_top_orig);
 
-                float top_scale = 1.0 - (p * p * sqrt(p)) * 0.92;
-                float cosVal = max(cos(eta * 1.57079632679), 0.0);
-                float profile = pow(cosVal + 0.0001, 0.7 + 0.5 * p);
-                float half_w = 0.5 * top_scale * profile;
+                float top_scale = 1.0 - pow(p, 1.8) * 0.45;
+                float bot_scale = max(0.02, 1.0 - pow(p, 0.75) * 0.98);
+                float w_factor = top_scale + (bot_scale - top_scale) * pow(eta, 1.3);
 
-                if (half_w <= 0.001) {
+                if (w_factor <= 0.001) {
                     return half4(0.0, 0.0, 0.0, 0.0);
                 }
 
                 float u_screen = fragCoord.x / resolution.x;
                 float dx = u_screen - px;
 
-                float dx_orig = dx / (half_w / 0.5);
+                float dx_orig = dx / w_factor;
                 float u_orig = 0.5 + dx_orig;
 
-                float sag = p * 0.15 * (1.0 - clamp(dx_orig * dx_orig * 4.0, 0.0, 1.0)) * sin(eta * 3.1415926535);
-                float v_orig_sag = v_orig - sag * (v_bot_orig - v_top_orig);
+                float sag = p * 0.07 * (1.0 - clamp(dx_orig * dx_orig * 4.0, 0.0, 1.0)) * sin(eta * 3.1415926535);
+                float v_orig_sag = v_top_orig + eta * (v_bot_orig - v_top_orig) - sag;
 
                 if (u_orig < 0.0 || u_orig > 1.0 || v_orig_sag < 0.0 || v_orig_sag > 1.0) {
                     return half4(0.0, 0.0, 0.0, 0.0);
                 }
 
-                float edge_dist_x = min(u_orig, 1.0 - u_orig) * (half_w * resolution.x);
+                float edge_dist_x = min(u_orig, 1.0 - u_orig) * (w_factor * resolution.x);
                 float edge_dist_y = min(v_orig_sag, 1.0 - v_orig_sag) * (span_y * resolution.y);
                 float edge_dist = min(edge_dist_x, edge_dist_y);
-                float alpha = clamp(edge_dist, 0.0, 1.0);
+                float alpha = clamp(edge_dist * 0.5, 0.0, 1.0);
 
                 float2 sampleCoord = float2(u_orig * resolution.x, v_orig_sag * resolution.y);
                 half4 color = content.eval(sampleCoord);
 
-                float highlight = 1.0 + 0.2 * p * sin(eta * 3.1415926535) * (1.0 - abs(dx_orig) * sqrt(abs(dx_orig)));
+                float highlight = 1.0 + 0.15 * p * sin(eta * 3.1415926535) * (1.0 - abs(dx_orig));
                 color.rgb *= highlight;
 
                 return color * alpha;
@@ -384,7 +382,8 @@ open class OverlayService : Service() {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -395,18 +394,16 @@ open class OverlayService : Service() {
             val widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(displayMetrics.widthPixels, View.MeasureSpec.EXACTLY)
             val heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(displayMetrics.heightPixels, View.MeasureSpec.AT_MOST)
             overlayView.measure(widthMeasureSpec, heightMeasureSpec)
-            val measuredW = cardRoot.measuredWidth.toFloat().coerceAtLeast(displayMetrics.widthPixels * 0.85f)
-            val measuredH = cardRoot.measuredHeight.toFloat().coerceAtLeast(340f * density)
-            val portalOffset = 16f * density
+            val measuredW = overlayView.measuredWidth.toFloat().coerceAtLeast(displayMetrics.widthPixels.toFloat())
+            val measuredH = overlayView.measuredHeight.toFloat().coerceAtLeast(360f * density)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val shader = RuntimeShader(SUCK_SHADER_SRC)
                 shader.setFloatUniform("progress", 1.0f)
                 shader.setFloatUniform("resolution", measuredW, measuredH)
-                cardRoot.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
-                cardRoot.translationY = portalOffset
+                overlayView.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
                 cardRoot.elevation = 0f
-                cardRoot.alpha = 1.0f
+                overlayView.alpha = 1.0f
             } else {
                 cardRoot.translationY = 800f
                 cardRoot.alpha = 0f
@@ -418,7 +415,7 @@ open class OverlayService : Service() {
                 isOverlayShowing = true
                 Log.i(TAG, "Overlay window added to WindowManager. Total active: ${attachedViews.size}")
 
-                startSuckAppearanceAnimation(cardRoot, measuredW, measuredH, portalOffset, baseElevation)
+                startSuckAppearanceAnimation(overlayView, cardRoot, measuredW, measuredH, baseElevation)
                 triggerTapticEngineHaptic(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to add overlay to WindowManager", e)
@@ -525,8 +522,10 @@ open class OverlayService : Service() {
                     val view = iterator.next()
                     try {
                         val cardRoot = view.findViewById<View>(R.id.cardRoot)
+                        (view.tag as? ValueAnimator)?.cancel()
                         (cardRoot?.tag as? ValueAnimator)?.cancel()
                         cardRoot?.animate()?.cancel()
+                        view.setRenderEffect(null)
                         cardRoot?.setRenderEffect(null)
                         windowManager?.removeViewImmediate(view)
                     } catch (e: Exception) {
@@ -541,16 +540,16 @@ open class OverlayService : Service() {
         }
 
         private fun startSuckAppearanceAnimation(
+            overlayView: View,
             cardRoot: View,
             initialW: Float,
             initialH: Float,
-            portalOffset: Float,
             baseElevation: Float
         ) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                cardRoot.post {
-                    val w = if (cardRoot.width > 0) cardRoot.width.toFloat() else initialW
-                    val h = if (cardRoot.height > 0) cardRoot.height.toFloat() else initialH
+                overlayView.post {
+                    val w = if (overlayView.width > 0) overlayView.width.toFloat() else initialW
+                    val h = if (overlayView.height > 0) overlayView.height.toFloat() else initialH
                     val shader = RuntimeShader(SUCK_SHADER_SRC)
 
                     val animator = ValueAnimator.ofFloat(1.0f, 0.0f).apply {
@@ -560,21 +559,19 @@ open class OverlayService : Service() {
                             val p = va.animatedValue as Float
                             shader.setFloatUniform("progress", p)
                             shader.setFloatUniform("resolution", w, h)
-                            cardRoot.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
-                            cardRoot.translationY = p * portalOffset
+                            overlayView.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
                             cardRoot.elevation = (1.0f - p) * baseElevation
-                            cardRoot.invalidate()
+                            overlayView.invalidate()
                         }
                         addListener(object : AnimatorListenerAdapter() {
                             override fun onAnimationEnd(animation: Animator) {
-                                cardRoot.setRenderEffect(null)
-                                cardRoot.translationY = 0f
+                                overlayView.setRenderEffect(null)
                                 cardRoot.elevation = baseElevation
-                                cardRoot.tag = null
+                                overlayView.tag = null
                             }
                         })
                     }
-                    cardRoot.tag = animator
+                    overlayView.tag = animator
                     animator.start()
                 }
             } else {
@@ -593,13 +590,13 @@ open class OverlayService : Service() {
                 return
             }
 
+            (overlayView.tag as? ValueAnimator)?.cancel()
             (cardRoot.tag as? ValueAnimator)?.cancel()
             cardRoot.animate().cancel()
+            cardRoot.translationY = 0f
 
-            val w = if (cardRoot.width > 0) cardRoot.width.toFloat() else cardRoot.measuredWidth.toFloat()
-            val h = if (cardRoot.height > 0) cardRoot.height.toFloat() else cardRoot.measuredHeight.toFloat()
-            val density = cardRoot.resources.displayMetrics.density
-            val portalOffset = 16f * density
+            val w = if (overlayView.width > 0) overlayView.width.toFloat() else overlayView.measuredWidth.toFloat()
+            val h = if (overlayView.height > 0) overlayView.height.toFloat() else overlayView.measuredHeight.toFloat()
             val currentElevation = cardRoot.elevation
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && w > 0f && h > 0f) {
@@ -611,20 +608,19 @@ open class OverlayService : Service() {
                         val p = va.animatedValue as Float
                         shader.setFloatUniform("progress", p)
                         shader.setFloatUniform("resolution", w, h)
-                        cardRoot.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
-                        cardRoot.translationY = p * portalOffset
+                        overlayView.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"))
                         cardRoot.elevation = (1.0f - p) * currentElevation
-                        cardRoot.invalidate()
+                        overlayView.invalidate()
                     }
                     addListener(object : AnimatorListenerAdapter() {
                         override fun onAnimationEnd(animation: Animator) {
-                            cardRoot.setRenderEffect(null)
-                            cardRoot.tag = null
+                            overlayView.setRenderEffect(null)
+                            overlayView.tag = null
                             onFinished()
                         }
                     })
                 }
-                cardRoot.tag = animator
+                overlayView.tag = animator
                 animator.start()
             } else {
                 cardRoot.animate()
