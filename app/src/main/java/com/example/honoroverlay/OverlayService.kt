@@ -228,7 +228,7 @@ open class OverlayService : Service() {
                                 loadedSoundIds.add(sampleId)
                                 if (pendingSoundId == sampleId && SystemClock.elapsedRealtime() - pendingSoundTimestamp < 500L) {
                                     pendingSoundId = 0
-                                    play(sampleId, 1.0f, 1.0f, 1, 0, 1.0f)
+                                    play(sampleId, 0.45f, 0.45f, 1, 0, 1.0f)
                                 }
                             }
                         }
@@ -249,7 +249,7 @@ open class OverlayService : Service() {
                     return
                 }
                 if (loadedSoundIds.contains(soundId)) {
-                    soundPool?.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
+                    soundPool?.play(soundId, 0.45f, 0.45f, 1, 0, 1.0f)
                 } else {
                     pendingSoundId = soundId
                     pendingSoundTimestamp = SystemClock.elapsedRealtime()
