@@ -196,6 +196,7 @@ open class OverlayService : Service() {
         private var windowManager: WindowManager? = null
 
         private val attachedViews = Collections.synchronizedSet(mutableSetOf<View>())
+        private val dismissingViews = Collections.synchronizedSet(mutableSetOf<View>())
         private var isOverlayShowing = false
         private var lastShowTimestamp = 0L
         private var currentBatteryLevel: Int = 100
@@ -308,34 +309,9 @@ open class OverlayService : Service() {
                 btnDone.setTextColor(Color.WHITE)
             }
 
-            var isThisViewDismissing = false
-            fun dismissThisOverlayView() {
-                if (isThisViewDismissing) return
-                isThisViewDismissing = true
-                btnDone.isClickable = false
-                cardRoot.setOnTouchListener(null)
-
-                startSuckDismissAnimation(overlayView) {
-                    try {
-                        if (overlayView.isAttachedToWindow) {
-                            windowManager?.removeView(overlayView)
-                        }
-                    } catch (e: Exception) {
-                        try {
-                            windowManager?.removeViewImmediate(overlayView)
-                        } catch (_: Exception) {}
-                    } finally {
-                        attachedViews.remove(overlayView)
-                        if (attachedViews.isEmpty()) {
-                            isOverlayShowing = false
-                        }
-                    }
-                }
-            }
-
             btnDone.setOnClickListener {
                 triggerSingleClickHaptic(context)
-                dismissThisOverlayView()
+                dismissViewAnimated(overlayView)
             }
 
             var startY = 0f
@@ -360,7 +336,7 @@ open class OverlayService : Service() {
                             isDragging = false
                             val currentTransY = view.translationY
                             if (currentTransY > 120f) {
-                                dismissThisOverlayView()
+                                dismissViewAnimated(overlayView)
                             } else {
                                 view.animate()
                                     .translationY(0f)
@@ -481,34 +457,50 @@ open class OverlayService : Service() {
         }
 
         private fun dismissAllAnimated() {
-            synchronized(attachedViews) {
-                val viewsToDismiss = attachedViews.toList()
-                if (viewsToDismiss.isEmpty()) {
-                    isOverlayShowing = false
-                    return
+            val viewsToDismiss = synchronized(attachedViews) {
+                attachedViews.filter { !dismissingViews.contains(it) }
+            }
+            if (viewsToDismiss.isEmpty()) {
+                synchronized(attachedViews) {
+                    if (attachedViews.isEmpty()) {
+                        isOverlayShowing = false
+                    }
                 }
+                return
+            }
 
-                for (overlayView in viewsToDismiss) {
-                    val cardRoot = overlayView.findViewById<View>(R.id.cardRoot)
-                    val btnDone = overlayView.findViewById<View>(R.id.btnDone)
-                    btnDone?.isClickable = false
-                    cardRoot?.setOnTouchListener(null)
+            for (overlayView in viewsToDismiss) {
+                dismissViewAnimated(overlayView)
+            }
+        }
 
-                    startSuckDismissAnimation(overlayView) {
-                        try {
-                            if (overlayView.isAttachedToWindow) {
-                                windowManager?.removeView(overlayView)
-                                Log.i(TAG, "Overlay view removed from WindowManager")
-                            }
-                        } catch (e: Exception) {
-                            try {
-                                windowManager?.removeViewImmediate(overlayView)
-                            } catch (_: Exception) {}
-                        } finally {
-                            attachedViews.remove(overlayView)
-                            if (attachedViews.isEmpty()) {
-                                isOverlayShowing = false
-                            }
+        private fun dismissViewAnimated(overlayView: View) {
+            synchronized(attachedViews) {
+                if (!attachedViews.contains(overlayView)) return
+                if (!dismissingViews.add(overlayView)) return
+            }
+
+            val cardRoot = overlayView.findViewById<View>(R.id.cardRoot)
+            val btnDone = overlayView.findViewById<View>(R.id.btnDone)
+            btnDone?.isClickable = false
+            cardRoot?.setOnTouchListener(null)
+
+            startSuckDismissAnimation(overlayView) {
+                try {
+                    if (overlayView.isAttachedToWindow) {
+                        windowManager?.removeView(overlayView)
+                        Log.i(TAG, "Overlay view removed from WindowManager")
+                    }
+                } catch (e: Exception) {
+                    try {
+                        windowManager?.removeViewImmediate(overlayView)
+                    } catch (_: Exception) {}
+                } finally {
+                    synchronized(attachedViews) {
+                        attachedViews.remove(overlayView)
+                        dismissingViews.remove(overlayView)
+                        if (attachedViews.isEmpty()) {
+                            isOverlayShowing = false
                         }
                     }
                 }
@@ -522,9 +514,19 @@ open class OverlayService : Service() {
                     val view = iterator.next()
                     try {
                         val cardRoot = view.findViewById<View>(R.id.cardRoot)
-                        (view.tag as? ValueAnimator)?.cancel()
-                        (cardRoot?.tag as? ValueAnimator)?.cancel()
+                        (view.tag as? ValueAnimator)?.let {
+                            it.removeAllListeners()
+                            it.cancel()
+                        }
+                        (cardRoot?.tag as? ValueAnimator)?.let {
+                            it.removeAllListeners()
+                            it.cancel()
+                        }
                         cardRoot?.animate()?.cancel()
+                        view.visibility = View.GONE
+                        cardRoot?.visibility = View.GONE
+                        view.alpha = 0f
+                        cardRoot?.alpha = 0f
                         view.setRenderEffect(null)
                         cardRoot?.setRenderEffect(null)
                         windowManager?.removeViewImmediate(view)
@@ -535,6 +537,7 @@ open class OverlayService : Service() {
                     }
                     iterator.remove()
                 }
+                dismissingViews.clear()
             }
             isOverlayShowing = false
         }
@@ -590,17 +593,39 @@ open class OverlayService : Service() {
                 return
             }
 
-            (overlayView.tag as? ValueAnimator)?.cancel()
-            (cardRoot.tag as? ValueAnimator)?.cancel()
+            (overlayView.tag as? ValueAnimator)?.let {
+                it.removeAllListeners()
+                it.cancel()
+            }
+            (cardRoot.tag as? ValueAnimator)?.let {
+                it.removeAllListeners()
+                it.cancel()
+            }
             cardRoot.animate().cancel()
             cardRoot.translationY = 0f
 
-            val w = if (overlayView.width > 0) overlayView.width.toFloat() else overlayView.measuredWidth.toFloat()
-            val h = if (overlayView.height > 0) overlayView.height.toFloat() else overlayView.measuredHeight.toFloat()
+            val displayMetrics = overlayView.resources.displayMetrics
+            val fallbackW = displayMetrics.widthPixels.toFloat()
+            val fallbackH = 360f * displayMetrics.density
+            val w = if (overlayView.width > 0) overlayView.width.toFloat() else if (overlayView.measuredWidth > 0) overlayView.measuredWidth.toFloat() else fallbackW
+            val h = if (overlayView.height > 0) overlayView.height.toFloat() else if (overlayView.measuredHeight > 0) overlayView.measuredHeight.toFloat() else fallbackH
             val currentElevation = cardRoot.elevation
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && w > 0f && h > 0f) {
                 val shader = RuntimeShader(SUCK_SHADER_SRC)
+                var finished = false
+                val safeFinish = {
+                    if (!finished) {
+                        finished = true
+                        overlayView.tag = null
+                        cardRoot.visibility = View.GONE
+                        overlayView.visibility = View.GONE
+                        cardRoot.alpha = 0f
+                        overlayView.alpha = 0f
+                        onFinished()
+                    }
+                }
+
                 val animator = ValueAnimator.ofFloat(0.0f, 1.0f).apply {
                     duration = 380
                     interpolator = PathInterpolator(0.38f, 0.0f, 0.2f, 1.0f)
@@ -614,9 +639,7 @@ open class OverlayService : Service() {
                     }
                     addListener(object : AnimatorListenerAdapter() {
                         override fun onAnimationEnd(animation: Animator) {
-                            overlayView.setRenderEffect(null)
-                            overlayView.tag = null
-                            onFinished()
+                            safeFinish()
                         }
                     })
                 }
@@ -628,7 +651,13 @@ open class OverlayService : Service() {
                     .alpha(0f)
                     .setDuration(250)
                     .setInterpolator(AccelerateInterpolator())
-                    .withEndAction { onFinished() }
+                    .withEndAction {
+                        cardRoot.visibility = View.GONE
+                        overlayView.visibility = View.GONE
+                        cardRoot.alpha = 0f
+                        overlayView.alpha = 0f
+                        onFinished()
+                    }
                     .start()
             }
         }
