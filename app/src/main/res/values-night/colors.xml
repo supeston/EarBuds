@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#0A84FF</color>
+    <color name="ios_bg">#000000</color>
+    <color name="ios_card_bg">#1C1C1E</color>
+    <color name="ios_card_stroke">#2C2C2E</color>
+    <color name="ios_text_primary">#FFFFFF</color>
+    <color name="ios_text_secondary">#8E8E93</color>
+    <color name="ios_divider">#2C2C2E</color>
+    <color name="ios_green">#34C759</color>
+    <color name="ios_blue">#0A84FF</color>
+    <color name="ios_red">#FF453A</color>
+    <color name="ios_switch_track_off">#39393D</color>
+    <color name="ios_switch_thumb">#FFFFFF</color>
+    <color name="ios_input_bg">#2C2C2E</color>
+</resources>

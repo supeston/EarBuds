@@ -1,32 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Honor Overlay</string>
-    <string name="app_subtitle">AirPods HUD Style (Android 16 API 36)</string>
+    <string name="app_name">Наушники</string>
+    <string name="app_subtitle">Всплывающее окно подключения</string>
 
-    <string name="overlay_card_title">Отображение поверх окон</string>
-    <string name="status_not_granted">Не предоставлено</string>
-    <string name="status_granted">Предоставлено</string>
-    <string name="status_action_required">Требуется действие</string>
-    <string name="overlay_card_desc">Требуется для показа дизайнерского всплывающего окна поверх других приложений.</string>
-    <string name="btn_grant_overlay">Разрешить оверлей</string>
-    <string name="btn_overlay_active">Разрешение активно</string>
+    <string name="section_permissions">РАЗРЕШЕНИЯ СЛУЖБЫ</string>
+    <string name="perm_overlay_title">Окно поверх приложений</string>
+    <string name="perm_overlay_desc">Для показа карточки на экране</string>
 
-    <string name="runtime_card_title">Bluetooth и Уведомления</string>
-    <string name="runtime_card_desc">Требуются разрешения BLUETOOTH_CONNECT для определения имени устройства и POST_NOTIFICATIONS для Foreground Service.</string>
-    <string name="btn_grant_runtime">Запросить разрешения</string>
-    <string name="btn_runtime_active">Разрешения активны</string>
+    <string name="perm_bluetooth_title">Устройства поблизости</string>
+    <string name="perm_bluetooth_desc">Определение подключения наушников</string>
 
-    <string name="system_card_title">Автономность и OriginOS (Vivo)</string>
-    <string name="system_card_desc">Настройки для бесперебойной работы 24/7 и скрытия уведомления.</string>
-    <string name="btn_hide_notification">Скрыть сервисное уведомление</string>
-    <string name="btn_battery_optimization">Отключить ограничения батареи</string>
-    <string name="btn_origin_os_autostart">Автозапуск OriginOS</string>
+    <string name="perm_battery_title">Работа в фоне</string>
+    <string name="perm_battery_desc">Защита службы от усыпления системой</string>
 
-    <string name="filter_card_title">Фильтр устройства</string>
-    <string name="filter_card_desc">По умолчанию оверлей срабатывает по совпадению «Earbuds» / «X5 Pro». Для точной привязки можно сохранить MAC-адрес.</string>
-    <string name="mac_hint">MAC-адрес (например, AA:BB:CC:DD:EE:FF)</string>
-    <string name="btn_save_mac">Сохранить MAC</string>
-    <string name="btn_clear_mac">Сбросить (по имени)</string>
-    <string name="btn_test_overlay">▶  Протестировать оверлей</string>
+    <string name="perm_notifications_title">Уведомление службы</string>
+    <string name="perm_notifications_desc">Нажмите, чтобы настроить или скрыть значок</string>
+
+    <string name="section_device">УСТРОЙСТВО</string>
+    <string name="device_name_label">Имя устройства</string>
+    <string name="device_name_hint">Honor Earbuds X5 Pro</string>
+    <string name="device_mac_label">MAC-адрес (опционально)</string>
+    <string name="device_mac_hint">AA:BB:CC:DD:EE:FF</string>
+
+    <string name="section_animation">АНИМАЦИЯ КАРТОЧКИ</string>
+    <string name="animation_title">Файл анимации</string>
+    <string name="animation_default">Оригинал (Honor Earbuds WebP)</string>
+    <string name="btn_choose_animation">Выбрать</string>
+    <string name="btn_reset_animation">Сбросить</string>
+
+    <string name="btn_test_overlay">Проверить анимацию</string>
 
     <string name="default_device_name">Honor Earbuds X5 Pro</string>
     <string name="earbuds_desc">Honor Earbuds X5 Pro</string>

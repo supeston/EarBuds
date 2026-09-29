@@ -158,14 +158,19 @@ class EarbudsMonitorService : Service() {
         val deviceAddress = device.address ?: ""
         val prefs = getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
         val savedMac = prefs.getString(MainActivity.KEY_SAVED_MAC, "")?.trim() ?: ""
+        val savedName = prefs.getString(MainActivity.KEY_SAVED_NAME, "")?.trim() ?: ""
 
         val matchesMac = savedMac.isNotEmpty() && deviceAddress.equals(savedMac, ignoreCase = true)
-        val matchesName = deviceName?.let {
-            it.contains("Honor Earbuds X5 Pro", ignoreCase = true) ||
-                    it.contains("X5 Pro", ignoreCase = true) ||
-                    it.contains("Earbuds", ignoreCase = true) ||
-                    it.contains("Honor", ignoreCase = true)
-        } ?: false
+        val matchesName = if (savedName.isNotEmpty()) {
+            deviceName?.contains(savedName, ignoreCase = true) == true
+        } else {
+            deviceName?.let {
+                it.contains("Honor Earbuds X5 Pro", ignoreCase = true) ||
+                        it.contains("X5 Pro", ignoreCase = true) ||
+                        it.contains("Earbuds", ignoreCase = true) ||
+                        it.contains("Honor", ignoreCase = true)
+            } ?: false
+        }
 
         Log.d(TAG, "Device ACL Connected: Name='$deviceName', Address='$deviceAddress', matchesMac=$matchesMac, matchesName=$matchesName")
 
@@ -174,8 +179,9 @@ class EarbudsMonitorService : Service() {
                 return
             }
             val batteryLevel = extractDeviceBattery(device, intent)
+            val displayName = if (savedName.isNotEmpty()) savedName else "Honor Earbuds X5 Pro"
             Log.i(TAG, "Matching Honor Earbuds connected with battery $batteryLevel%! Showing overlay...")
-            OverlayService.show(this, "Honor Earbuds X5 Pro", batteryLevel)
+            OverlayService.show(this, displayName, batteryLevel)
         }
     }
 

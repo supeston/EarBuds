@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.HonorOverlay" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:statusBarColor">#0F1117</item>
-        <item name="android:navigationBarColor">#0F1117</item>
-        <item name="android:windowBackground">#0F1117</item>
-        <item name="colorPrimary">@color/primary</item>
+    <style name="Theme.HonorOverlay" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/ios_bg</item>
+        <item name="android:navigationBarColor">@color/ios_bg</item>
+        <item name="android:windowBackground">@color/ios_bg</item>
+        <item name="colorPrimary">@color/ios_blue</item>
+        <item name="colorSecondary">@color/ios_green</item>
+    </style>
+
+    <style name="Widget.App.IosSwitch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="trackTint">@color/ios_switch_track</item>
+        <item name="trackDecorationTint">@android:color/transparent</item>
+        <item name="thumbTint">@color/ios_switch_thumb</item>
+        <item name="thumbIcon">@null</item>
+        <item name="android:minWidth">51dp</item>
+        <item name="android:minHeight">31dp</item>
     </style>
 
     <style name="FrostedOverlayTheme" parent="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">

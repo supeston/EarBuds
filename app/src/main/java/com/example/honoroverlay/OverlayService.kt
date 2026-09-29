@@ -45,6 +45,7 @@ import android.media.SoundPool
 import coil.ImageLoader
 import coil.decode.ImageDecoderDecoder
 import coil.load
+import java.io.File
 import java.util.Collections
 
 open class OverlayService : Service() {
@@ -459,6 +460,58 @@ open class OverlayService : Service() {
         }
 
         private fun loadWebPAnimation(context: Context, ivEarbuds: ImageView) {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val customPath = prefs.getString(MainActivity.KEY_CUSTOM_ANIMATION_PATH, null)
+            val customFile = customPath?.let { File(it) }?.takeIf { it.exists() && it.length() > 0 }
+
+            if (customFile != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    try {
+                        val source = ImageDecoder.createSource(customFile)
+                        val drawable = ImageDecoder.decodeDrawable(source)
+                        ivEarbuds.setImageDrawable(drawable)
+                        ivEarbuds.post {
+                            try {
+                                if (drawable is Animatable) {
+                                    drawable.start()
+                                }
+                            } catch (_: Throwable) {}
+                        }
+                        return
+                    } catch (_: Throwable) {}
+                }
+
+                try {
+                    val imageLoader = ImageLoader.Builder(context)
+                        .components {
+                            if (Build.VERSION.SDK_INT >= 28) {
+                                add(ImageDecoderDecoder.Factory())
+                            }
+                            add(coil.decode.GifDecoder.Factory())
+                            add(coil.decode.VideoFrameDecoder.Factory())
+                        }
+                        .build()
+
+                    ivEarbuds.load(customFile, imageLoader) {
+                        listener(
+                            onSuccess = { _, result ->
+                                val d = result.drawable
+                                if (d is Animatable) {
+                                    ivEarbuds.post {
+                                        try {
+                                            d.start()
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                            },
+                            onError = { _, _ ->
+                                ivEarbuds.setImageResource(R.drawable.ic_bluetooth)
+                            }
+                        )
+                    }
+                    return
+                } catch (_: Throwable) {}
+            }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 try {
