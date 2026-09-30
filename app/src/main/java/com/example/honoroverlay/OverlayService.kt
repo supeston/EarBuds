@@ -300,8 +300,7 @@ open class OverlayService : Service() {
             registerOrientationListener(context)
 
             if (!Settings.canDrawOverlays(context)) {
-                Log.w(TAG, "Cannot show overlay: SYSTEM_ALERT_WINDOW permission not granted")
-                return
+                Log.w(TAG, "canDrawOverlays returned false, attempting overlay addView anyway")
             }
 
             if (!shouldShowOverlay(context)) {

@@ -7,32 +7,11 @@
     android:background="@color/ios_bg"
     android:orientation="vertical">
 
-    <LinearLayout
+    <View
         android:id="@+id/topBarContainer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/ios_bg"
-        android:orientation="vertical">
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="48dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="@string/app_name"
-                android:textColor="@color/ios_text_primary"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-        </FrameLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0.5dp"
-            android:background="@color/ios_divider" />
-    </LinearLayout>
+        android:layout_height="0dp"
+        android:background="@color/ios_bg" />
 
     <ScrollView
         android:id="@+id/scrollView"

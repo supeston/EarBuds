@@ -57,7 +57,9 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.rootLayout) { _, insets ->
             val statusBar = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navBar = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            binding.topBarContainer.setPadding(0, statusBar.top, 0, 0)
+            binding.topBarContainer.layoutParams = binding.topBarContainer.layoutParams.apply {
+                height = statusBar.top
+            }
             binding.scrollView.setPadding(0, 0, 0, navBar.bottom + (16f * resources.displayMetrics.density).toInt())
             insets
         }
@@ -76,18 +78,27 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         binding.switchOverlay.setOnClickListener {
             val hasOverlay = Settings.canDrawOverlays(this)
-            if (!hasOverlay) {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                overlayPermissionLauncher.launch(intent)
-            } else {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                startActivity(intent)
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            try {
+                if (!hasOverlay) {
+                    overlayPermissionLauncher.launch(intent)
+                } else {
+                    startActivity(intent)
+                }
+            } catch (_: Exception) {
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                } catch (_: Exception) {
+                    try {
+                        val detailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(detailsIntent)
+                    } catch (_: Exception) {}
+                }
             }
         }
         binding.rowOverlay.setOnClickListener {

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Наушники</string>
+    <string name="app_name">PodsOverlay</string>
     <string name="app_subtitle">Всплывающее окно подключения</string>
 
     <string name="section_permissions">РАЗРЕШЕНИЯ СЛУЖБЫ</string>
