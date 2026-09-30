@@ -32,6 +32,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
@@ -454,18 +455,33 @@ open class OverlayService : Service() {
 
             var startY = 0f
             var isDragging = false
+            var velocityTracker: VelocityTracker? = null
+
             cardRoot.setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         cancelAutoDismiss()
-                        startY = event.rawY
+                        (overlayView.tag as? ValueAnimator)?.let {
+                            it.removeAllListeners()
+                            it.cancel()
+                        }
+                        overlayView.tag = null
+                        overlayView.setRenderEffect(null)
+                        view.animate().cancel()
+
+                        startY = event.rawY - view.translationY
                         isDragging = true
+
+                        velocityTracker?.recycle()
+                        velocityTracker = VelocityTracker.obtain()
+                        velocityTracker?.addMovement(event)
                         true
                     }
                     MotionEvent.ACTION_MOVE -> {
                         if (isDragging) {
+                            velocityTracker?.addMovement(event)
                             val deltaY = event.rawY - startY
-                            val transY = deltaY.coerceAtLeast(0f)
+                            val transY = if (deltaY >= 0f) deltaY else deltaY * 0.15f
                             view.translationY = transY
                         }
                         true
@@ -473,19 +489,32 @@ open class OverlayService : Service() {
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         if (isDragging) {
                             isDragging = false
+                            velocityTracker?.addMovement(event)
+                            velocityTracker?.computeCurrentVelocity(1000)
+                            val vy = velocityTracker?.yVelocity ?: 0f
+                            velocityTracker?.recycle()
+                            velocityTracker = null
+
                             val currentTransY = view.translationY
-                            if (currentTransY > 100f) {
-                                dismissViewSwipeDown(overlayView)
+                            val density = context.resources.displayMetrics.density
+                            val isFlingDown = vy > 400f && currentTransY > 12f
+                            val isDraggedDown = currentTransY > 40f * density
+
+                            if (isFlingDown || isDraggedDown) {
+                                dismissViewSwipeDown(overlayView, vy)
                             } else {
                                 view.animate()
                                     .translationY(0f)
-                                    .setDuration(200)
+                                    .setDuration(180)
                                     .setInterpolator(PathInterpolator(0.2f, 1f, 0.2f, 1f))
                                     .withEndAction {
                                         scheduleAutoDismiss(overlayView.context)
                                     }
                                     .start()
                             }
+                        } else {
+                            velocityTracker?.recycle()
+                            velocityTracker = null
                         }
                         true
                     }
@@ -669,7 +698,7 @@ open class OverlayService : Service() {
             }
         }
 
-        private fun dismissViewSwipeDown(overlayView: View) {
+        private fun dismissViewSwipeDown(overlayView: View, initialVelocity: Float = 0f) {
             cancelAutoDismiss()
             synchronized(attachedViews) {
                 if (!attachedViews.contains(overlayView)) return
@@ -697,14 +726,18 @@ open class OverlayService : Service() {
                 it.cancel()
             }
             cardRoot.animate().cancel()
+            overlayView.setRenderEffect(null)
 
             val currentTransY = cardRoot.translationY
-            val targetTransY = (overlayView.height.toFloat() + 400f).coerceAtLeast(currentTransY + 800f)
+            val density = overlayView.resources.displayMetrics.density
+            val targetTransY = (overlayView.height.toFloat() + 300f * density).coerceAtLeast(currentTransY + 600f * density)
+
+            val baseDuration = if (initialVelocity > 1500f) 140L else if (initialVelocity > 700f) 180L else 220L
 
             cardRoot.animate()
                 .translationY(targetTransY)
-                .alpha(0.5f)
-                .setDuration(220)
+                .alpha(0.3f)
+                .setDuration(baseDuration)
                 .setInterpolator(PathInterpolator(0.25f, 0.1f, 0.25f, 1.0f))
                 .withEndAction {
                     safeRemoveView(overlayView)
@@ -726,18 +759,8 @@ open class OverlayService : Service() {
 
             playDismissEffects(overlayView.context)
 
-            if (cardRoot != null && cardRoot.translationY > 80f) {
-                val currentTransY = cardRoot.translationY
-                val targetTransY = (overlayView.height.toFloat() + 400f).coerceAtLeast(currentTransY + 800f)
-                cardRoot.animate()
-                    .translationY(targetTransY)
-                    .alpha(0.5f)
-                    .setDuration(220)
-                    .setInterpolator(PathInterpolator(0.25f, 0.1f, 0.25f, 1.0f))
-                    .withEndAction {
-                        safeRemoveView(overlayView)
-                    }
-                    .start()
+            if (cardRoot != null && cardRoot.translationY > 40f) {
+                dismissViewSwipeDown(overlayView, 0f)
                 return
             }
 
