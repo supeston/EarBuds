@@ -32,7 +32,6 @@ import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
-import android.view.VelocityTracker
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
@@ -449,78 +448,14 @@ open class OverlayService : Service() {
                 btnDone.setTextColor(Color.WHITE)
             }
 
-            btnDone.setOnClickListener {
-                dismissViewAnimated(overlayView)
-            }
+            val layoutBattery = overlayView.findViewById<View>(R.id.layoutBattery)
+            layoutBattery?.isClickable = false
+            batteryView?.isClickable = false
+            tvBatteryPercent?.isClickable = false
+            tvDeviceName.isClickable = false
+            ivEarbuds.isClickable = false
 
-            var startY = 0f
-            var isDragging = false
-            var velocityTracker: VelocityTracker? = null
-
-            cardRoot.setOnTouchListener { view, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        cancelAutoDismiss()
-                        (overlayView.tag as? ValueAnimator)?.let {
-                            it.removeAllListeners()
-                            it.cancel()
-                        }
-                        overlayView.tag = null
-                        overlayView.setRenderEffect(null)
-                        view.animate().cancel()
-
-                        startY = event.rawY - view.translationY
-                        isDragging = true
-
-                        velocityTracker?.recycle()
-                        velocityTracker = VelocityTracker.obtain()
-                        velocityTracker?.addMovement(event)
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        if (isDragging) {
-                            velocityTracker?.addMovement(event)
-                            val deltaY = event.rawY - startY
-                            val transY = if (deltaY >= 0f) deltaY else deltaY * 0.15f
-                            view.translationY = transY
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        if (isDragging) {
-                            isDragging = false
-                            velocityTracker?.addMovement(event)
-                            velocityTracker?.computeCurrentVelocity(1000)
-                            val vy = velocityTracker?.yVelocity ?: 0f
-                            velocityTracker?.recycle()
-                            velocityTracker = null
-
-                            val currentTransY = view.translationY
-                            val density = context.resources.displayMetrics.density
-                            val isFlingDown = vy > 400f && currentTransY > 12f
-                            val isDraggedDown = currentTransY > 40f * density
-
-                            if (isFlingDown || isDraggedDown) {
-                                dismissViewSwipeDown(overlayView, vy)
-                            } else {
-                                view.animate()
-                                    .translationY(0f)
-                                    .setDuration(180)
-                                    .setInterpolator(PathInterpolator(0.2f, 1f, 0.2f, 1f))
-                                    .withEndAction {
-                                        scheduleAutoDismiss(overlayView.context)
-                                    }
-                                    .start()
-                            }
-                        } else {
-                            velocityTracker?.recycle()
-                            velocityTracker = null
-                        }
-                        true
-                    }
-                    else -> false
-                }
-            }
+            setupSwipeAndTouchInteractions(overlayView, cardRoot, btnDone)
 
             loadWebPAnimation(context, ivEarbuds)
 
@@ -698,51 +633,78 @@ open class OverlayService : Service() {
             }
         }
 
-        private fun dismissViewSwipeDown(overlayView: View, initialVelocity: Float = 0f) {
-            cancelAutoDismiss()
-            synchronized(attachedViews) {
-                if (!attachedViews.contains(overlayView)) return
-                if (!dismissingViews.add(overlayView)) return
-            }
-
-            val cardRoot = overlayView.findViewById<View>(R.id.cardRoot)
-            val btnDone = overlayView.findViewById<View>(R.id.btnDone)
-            btnDone?.isClickable = false
-            cardRoot?.setOnTouchListener(null)
-
-            playDismissEffects(overlayView.context)
-
-            if (cardRoot == null) {
-                safeRemoveView(overlayView)
-                return
-            }
-
-            (overlayView.tag as? ValueAnimator)?.let {
-                it.removeAllListeners()
-                it.cancel()
-            }
-            (cardRoot.tag as? ValueAnimator)?.let {
-                it.removeAllListeners()
-                it.cancel()
-            }
-            cardRoot.animate().cancel()
-            overlayView.setRenderEffect(null)
-
-            val currentTransY = cardRoot.translationY
+        private fun setupSwipeAndTouchInteractions(overlayView: View, cardRoot: View, btnDone: View) {
             val density = overlayView.resources.displayMetrics.density
-            val targetTransY = (overlayView.height.toFloat() + 300f * density).coerceAtLeast(currentTransY + 600f * density)
+            val swipeThreshold = 8f * density
+            val flickThreshold = 5f * density
 
-            val baseDuration = if (initialVelocity > 1500f) 140L else if (initialVelocity > 700f) 180L else 220L
+            var startY = 0f
+            var startX = 0f
+            var startTime = 0L
+            var isDismissTriggered = false
 
-            cardRoot.animate()
-                .translationY(targetTransY)
-                .alpha(0.3f)
-                .setDuration(baseDuration)
-                .setInterpolator(PathInterpolator(0.25f, 0.1f, 0.25f, 1.0f))
-                .withEndAction {
-                    safeRemoveView(overlayView)
+            val touchListener = View.OnTouchListener { view, event ->
+                if (isDismissTriggered) return@OnTouchListener true
+
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        cancelAutoDismiss()
+                        startY = event.rawY
+                        startX = event.rawX
+                        startTime = SystemClock.elapsedRealtime()
+                        if (view === btnDone) {
+                            view.isPressed = true
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dy = event.rawY - startY
+                        val dx = event.rawX - startX
+                        if (dy > swipeThreshold && dy > Math.abs(dx)) {
+                            isDismissTriggered = true
+                            if (view === btnDone) {
+                                view.isPressed = false
+                            }
+                            dismissViewAnimated(overlayView)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (view === btnDone) {
+                            view.isPressed = false
+                        }
+                        val dy = event.rawY - startY
+                        val dx = event.rawX - startX
+                        val dt = (SystemClock.elapsedRealtime() - startTime).coerceAtLeast(1)
+                        val vy = (dy / dt) * 1000f
+
+                        if ((dy > flickThreshold && dy > Math.abs(dx)) || (vy > 250f && dy > 0f)) {
+                            isDismissTriggered = true
+                            dismissViewAnimated(overlayView)
+                        } else if (view === btnDone || view.id == R.id.btnDone || view === overlayView) {
+                            isDismissTriggered = true
+                            dismissViewAnimated(overlayView)
+                        } else {
+                            scheduleAutoDismiss(overlayView.context)
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        if (view === btnDone) {
+                            view.isPressed = false
+                        }
+                        if (!isDismissTriggered) {
+                            scheduleAutoDismiss(overlayView.context)
+                        }
+                        true
+                    }
+                    else -> false
                 }
-                .start()
+            }
+
+            cardRoot.setOnTouchListener(touchListener)
+            btnDone.setOnTouchListener(touchListener)
+            overlayView.setOnTouchListener(touchListener)
         }
 
         private fun dismissViewAnimated(overlayView: View) {
@@ -755,14 +717,12 @@ open class OverlayService : Service() {
             val cardRoot = overlayView.findViewById<View>(R.id.cardRoot)
             val btnDone = overlayView.findViewById<View>(R.id.btnDone)
             btnDone?.isClickable = false
+            btnDone?.setOnTouchListener(null)
+            btnDone?.setOnClickListener(null)
             cardRoot?.setOnTouchListener(null)
+            overlayView.setOnTouchListener(null)
 
             playDismissEffects(overlayView.context)
-
-            if (cardRoot != null && cardRoot.translationY > 40f) {
-                dismissViewSwipeDown(overlayView, 0f)
-                return
-            }
 
             startSuckDismissAnimation(overlayView) {
                 safeRemoveView(overlayView)
@@ -835,6 +795,7 @@ open class OverlayService : Service() {
         ) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 overlayView.post {
+                    if (dismissingViews.contains(overlayView)) return@post
                     val w = if (overlayView.width > 0) overlayView.width.toFloat() else initialW
                     val h = if (overlayView.height > 0) overlayView.height.toFloat() else initialH
                     val shader = RuntimeShader(SUCK_SHADER_SRC)
@@ -877,22 +838,33 @@ open class OverlayService : Service() {
                 return
             }
 
-            (overlayView.tag as? ValueAnimator)?.let {
-                it.removeAllListeners()
-                it.cancel()
-            }
+            val appearanceAnimator = overlayView.tag as? ValueAnimator
+            val startProgress = (appearanceAnimator?.animatedValue as? Float)?.takeIf { it in 0.0f..1.0f } ?: 0.0f
+            appearanceAnimator?.removeAllListeners()
+            appearanceAnimator?.cancel()
+            overlayView.tag = null
+
             (cardRoot.tag as? ValueAnimator)?.let {
                 it.removeAllListeners()
                 it.cancel()
             }
+            cardRoot.tag = null
             cardRoot.animate().cancel()
+            cardRoot.translationY = 0f
+            cardRoot.alpha = 1.0f
+            overlayView.alpha = 1.0f
 
             val displayMetrics = overlayView.resources.displayMetrics
             val fallbackW = displayMetrics.widthPixels.toFloat()
             val fallbackH = 360f * displayMetrics.density
-            val w = if (overlayView.width > 0) overlayView.width.toFloat() else if (overlayView.measuredWidth > 0) overlayView.measuredWidth.toFloat() else fallbackW
-            val h = if (overlayView.height > 0) overlayView.height.toFloat() else if (overlayView.measuredHeight > 0) overlayView.measuredHeight.toFloat() else fallbackH
-            val currentElevation = cardRoot.elevation
+            val w = if (overlayView.width > 0) overlayView.width.toFloat() else if (cardRoot.width > 0) cardRoot.width.toFloat() else fallbackW
+            val h = if (overlayView.height > 0) overlayView.height.toFloat() else if (cardRoot.height > 0) cardRoot.height.toFloat() else fallbackH
+            val baseElevation = if ((overlayView.context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES) {
+                4f * displayMetrics.density
+            } else {
+                10f * displayMetrics.density
+            }
+            val currentElevation = if (cardRoot.elevation > 0f) cardRoot.elevation else baseElevation
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && w > 0f && h > 0f) {
                 val shader = RuntimeShader(SUCK_SHADER_SRC)
@@ -901,6 +873,7 @@ open class OverlayService : Service() {
                     if (!finished) {
                         finished = true
                         overlayView.tag = null
+                        overlayView.setRenderEffect(null)
                         cardRoot.visibility = View.GONE
                         overlayView.visibility = View.GONE
                         cardRoot.alpha = 0f
@@ -909,8 +882,8 @@ open class OverlayService : Service() {
                     }
                 }
 
-                val animator = ValueAnimator.ofFloat(0.0f, 1.0f).apply {
-                    duration = 380
+                val animator = ValueAnimator.ofFloat(startProgress, 1.0f).apply {
+                    duration = 340
                     interpolator = PathInterpolator(0.38f, 0.0f, 0.2f, 1.0f)
                     addUpdateListener { va ->
                         val p = va.animatedValue as Float
