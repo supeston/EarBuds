@@ -635,8 +635,10 @@ open class OverlayService : Service() {
 
         private fun setupSwipeAndTouchInteractions(overlayView: View, cardRoot: View, btnDone: View) {
             val density = overlayView.resources.displayMetrics.density
-            val swipeThreshold = 8f * density
-            val flickThreshold = 5f * density
+            val densityFactor = (density / 2.625f).coerceIn(0.85f, 1.4f)
+            val swipeThreshold = 35f * densityFactor
+            val flickThreshold = 26f * densityFactor
+            val minFlingDy = 22f * densityFactor
 
             var startY = 0f
             var startX = 0f
@@ -678,7 +680,7 @@ open class OverlayService : Service() {
                         val dt = (SystemClock.elapsedRealtime() - startTime).coerceAtLeast(1)
                         val vy = (dy / dt) * 1000f
 
-                        if ((dy > flickThreshold && dy > Math.abs(dx)) || (vy > 250f && dy > 0f)) {
+                        if ((dy > flickThreshold && dy > Math.abs(dx)) || (vy > 450f && dy > minFlingDy)) {
                             isDismissTriggered = true
                             dismissViewAnimated(overlayView)
                         } else if (view === btnDone || view.id == R.id.btnDone || view === overlayView) {
