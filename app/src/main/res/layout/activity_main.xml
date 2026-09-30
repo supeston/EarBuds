@@ -85,9 +85,8 @@
                         android:textSize="13sp" />
                 </LinearLayout>
 
-                <com.google.android.material.materialswitch.MaterialSwitch
+                <com.example.honoroverlay.IosSwitch
                     android:id="@+id/switchOverlay"
-                    style="@style/Widget.App.IosSwitch"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
             </LinearLayout>
@@ -130,9 +129,8 @@
                         android:textSize="13sp" />
                 </LinearLayout>
 
-                <com.google.android.material.materialswitch.MaterialSwitch
+                <com.example.honoroverlay.IosSwitch
                     android:id="@+id/switchBluetooth"
-                    style="@style/Widget.App.IosSwitch"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
             </LinearLayout>
@@ -175,9 +173,8 @@
                         android:textSize="13sp" />
                 </LinearLayout>
 
-                <com.google.android.material.materialswitch.MaterialSwitch
+                <com.example.honoroverlay.IosSwitch
                     android:id="@+id/switchBattery"
-                    style="@style/Widget.App.IosSwitch"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
             </LinearLayout>
