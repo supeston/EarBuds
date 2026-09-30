@@ -1,10 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/ios_bg"
-    android:fillViewport="true">
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/topBarContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/ios_bg"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="@string/app_name"
+                android:textColor="@color/ios_text_primary"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="@color/ios_divider" />
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/scrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/ios_bg"
+        android:clipToPadding="false"
+        android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -367,31 +404,21 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
-            <Button
-                android:id="@+id/btnResetAnimation"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:layout_marginTop="8dp"
-                android:text="@string/btn_reset_animation"
-                android:textColor="@color/ios_red"
-                android:textSize="13sp"
-                android:visibility="gone" />
-
         </LinearLayout>
 
         <Button
-            android:id="@+id/btnTestOverlay"
+            android:id="@+id/btnResetSettings"
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="28dp"
             android:layout_marginBottom="36dp"
-            android:background="@drawable/bg_ios_button"
-            android:text="@string/btn_test_overlay"
-            android:textColor="#FFFFFF"
+            android:background="@drawable/bg_ios_destructive_button"
+            android:text="@string/btn_reset_settings"
+            android:textColor="@color/ios_red"
             android:textSize="16sp"
             android:textStyle="bold"
             app:backgroundTint="@null" />
 
     </LinearLayout>
 </ScrollView>
+</LinearLayout>

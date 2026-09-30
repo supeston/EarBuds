@@ -28,7 +28,7 @@
     <string name="btn_choose_animation">Выбрать</string>
     <string name="btn_reset_animation">Сбросить</string>
 
-    <string name="btn_test_overlay">Проверить анимацию</string>
+    <string name="btn_reset_settings">Сбросить настройки</string>
 
     <string name="default_device_name">Honor Earbuds X5 Pro</string>
     <string name="earbuds_desc">Honor Earbuds X5 Pro</string>

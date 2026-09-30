@@ -17,6 +17,8 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.doAfterTextChanged
 import com.example.honoroverlay.databinding.ActivityMainBinding
 import java.io.File
@@ -51,6 +53,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.rootLayout) { _, insets ->
+            val statusBar = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val navBar = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            binding.topBarContainer.setPadding(0, statusBar.top, 0, 0)
+            binding.scrollView.setPadding(0, 0, 0, navBar.bottom + (16f * resources.displayMetrics.density).toInt())
+            insets
+        }
 
         initViews()
         loadPreferences()
@@ -121,12 +131,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.btnResetAnimation.setOnClickListener {
-            resetCustomAnimation()
-        }
-
-        binding.btnTestOverlay.setOnClickListener {
-            testOverlay()
+        binding.btnResetSettings.setOnClickListener {
+            resetAllSettings()
         }
     }
 
@@ -153,10 +159,8 @@ class MainActivity : AppCompatActivity() {
 
         if (!customName.isNullOrEmpty() && fileExists) {
             binding.tvAnimationFileName.text = customName
-            binding.btnResetAnimation.visibility = View.VISIBLE
         } else {
             binding.tvAnimationFileName.text = getString(R.string.animation_default)
-            binding.btnResetAnimation.visibility = View.GONE
         }
     }
 
@@ -196,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun resetCustomAnimation() {
+    private fun resetAllSettings() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val customPath = prefs.getString(KEY_CUSTOM_ANIMATION_PATH, null)
         if (!customPath.isNullOrEmpty()) {
@@ -205,12 +209,16 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Exception) {}
         }
         prefs.edit()
+            .remove(KEY_SAVED_NAME)
+            .remove(KEY_SAVED_MAC)
             .remove(KEY_CUSTOM_ANIMATION_PATH)
             .remove(KEY_CUSTOM_ANIMATION_NAME)
             .apply()
 
+        binding.etDeviceName.setText("")
+        binding.etMacAddress.setText("")
         updateAnimationDisplay()
-        Toast.makeText(this, "Восстановлена стандартная анимация", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Настройки сброшены", Toast.LENGTH_SHORT).show()
     }
 
     private fun startMonitorService() {
@@ -332,28 +340,6 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Откройте настройки батареи вручную", Toast.LENGTH_SHORT).show()
             }
         }
-    }
-
-    private fun testOverlay() {
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(
-                this,
-                "Включите разрешение «Окно поверх приложений»",
-                Toast.LENGTH_SHORT
-            ).show()
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            overlayPermissionLauncher.launch(intent)
-            return
-        }
-
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedName = prefs.getString(KEY_SAVED_NAME, "")?.trim() ?: ""
-        val displayName = if (savedName.isNotEmpty()) savedName else "Honor Earbuds X5 Pro"
-
-        OverlayService.show(this, displayName, 85)
     }
 
     companion object {
