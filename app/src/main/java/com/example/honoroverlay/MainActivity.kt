@@ -142,9 +142,54 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        binding.btnTimeout3s.setOnClickListener { setTimeout(3) }
+        binding.btnTimeout5s.setOnClickListener { setTimeout(5) }
+        binding.btnTimeout8s.setOnClickListener { setTimeout(8) }
+
+        binding.rowSoundIos.setOnClickListener { setSoundProfile(SOUND_PROFILE_IOS) }
+        binding.rowSoundAirpods.setOnClickListener { setSoundProfile(SOUND_PROFILE_AIRPODS) }
+        binding.rowSoundVibration.setOnClickListener { setSoundProfile(SOUND_PROFILE_VIBRATION) }
+        binding.rowSoundSilent.setOnClickListener { setSoundProfile(SOUND_PROFILE_SILENT) }
+
         binding.btnResetSettings.setOnClickListener {
             resetAllSettings()
         }
+    }
+
+    private fun setTimeout(sec: Int) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(KEY_OVERLAY_TIMEOUT_SEC, sec).apply()
+        updateTimeoutUI(sec)
+        OverlayService.triggerSingleClickHaptic(this)
+    }
+
+    private fun updateTimeoutUI(sec: Int) {
+        val activeBg = ContextCompat.getDrawable(this, R.drawable.bg_ios_segment_active)
+        val textActive = ContextCompat.getColor(this, R.color.ios_text_primary)
+        val textInactive = ContextCompat.getColor(this, R.color.ios_text_secondary)
+
+        binding.btnTimeout3s.background = if (sec == 3) activeBg else null
+        binding.btnTimeout3s.setTextColor(if (sec == 3) textActive else textInactive)
+
+        binding.btnTimeout5s.background = if (sec == 5) activeBg else null
+        binding.btnTimeout5s.setTextColor(if (sec == 5) textActive else textInactive)
+
+        binding.btnTimeout8s.background = if (sec == 8) activeBg else null
+        binding.btnTimeout8s.setTextColor(if (sec == 8) textActive else textInactive)
+    }
+
+    private fun setSoundProfile(profile: Int) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(KEY_SOUND_PROFILE, profile).apply()
+        updateSoundProfileUI(profile)
+        OverlayService.playPreviewEffect(this, profile)
+    }
+
+    private fun updateSoundProfileUI(profile: Int) {
+        binding.ivCheckSoundIos.visibility = if (profile == SOUND_PROFILE_IOS) View.VISIBLE else View.GONE
+        binding.ivCheckSoundAirpods.visibility = if (profile == SOUND_PROFILE_AIRPODS) View.VISIBLE else View.GONE
+        binding.ivCheckSoundVibration.visibility = if (profile == SOUND_PROFILE_VIBRATION) View.VISIBLE else View.GONE
+        binding.ivCheckSoundSilent.visibility = if (profile == SOUND_PROFILE_SILENT) View.VISIBLE else View.GONE
     }
 
     private fun loadPreferences() {
@@ -158,6 +203,12 @@ class MainActivity : AppCompatActivity() {
         if (!savedMac.isNullOrEmpty()) {
             binding.etMacAddress.setText(savedMac)
         }
+
+        val savedTimeout = prefs.getInt(KEY_OVERLAY_TIMEOUT_SEC, DEFAULT_OVERLAY_TIMEOUT_SEC)
+        updateTimeoutUI(savedTimeout)
+
+        val savedSoundProfile = prefs.getInt(KEY_SOUND_PROFILE, DEFAULT_SOUND_PROFILE)
+        updateSoundProfileUI(savedSoundProfile)
 
         updateAnimationDisplay()
     }
@@ -224,11 +275,15 @@ class MainActivity : AppCompatActivity() {
             .remove(KEY_SAVED_MAC)
             .remove(KEY_CUSTOM_ANIMATION_PATH)
             .remove(KEY_CUSTOM_ANIMATION_NAME)
+            .remove(KEY_OVERLAY_TIMEOUT_SEC)
+            .remove(KEY_SOUND_PROFILE)
             .apply()
 
         binding.etDeviceName.setText("")
         binding.etMacAddress.setText("")
         updateAnimationDisplay()
+        updateTimeoutUI(DEFAULT_OVERLAY_TIMEOUT_SEC)
+        updateSoundProfileUI(DEFAULT_SOUND_PROFILE)
         Toast.makeText(this, "Настройки сброшены", Toast.LENGTH_SHORT).show()
     }
 
@@ -360,5 +415,13 @@ class MainActivity : AppCompatActivity() {
         const val KEY_SAVED_MAC = "saved_mac"
         const val KEY_CUSTOM_ANIMATION_PATH = "custom_animation_path"
         const val KEY_CUSTOM_ANIMATION_NAME = "custom_animation_name"
+        const val KEY_OVERLAY_TIMEOUT_SEC = "overlay_timeout_sec"
+        const val DEFAULT_OVERLAY_TIMEOUT_SEC = 5
+        const val KEY_SOUND_PROFILE = "sound_profile"
+        const val SOUND_PROFILE_IOS = 0
+        const val SOUND_PROFILE_AIRPODS = 1
+        const val SOUND_PROFILE_VIBRATION = 2
+        const val SOUND_PROFILE_SILENT = 3
+        const val DEFAULT_SOUND_PROFILE = SOUND_PROFILE_IOS
     }
 }

@@ -206,11 +206,15 @@ open class OverlayService : Service() {
         private var currentBatteryLevel: Int = 100
 
         private var soundPool: SoundPool? = null
-        private var soundAppearId: Int = 0
-        private var soundDismissId: Int = 0
+        private var soundIosAppearId: Int = 0
+        private var soundIosDismissId: Int = 0
+        private var soundAirpodsAppearId: Int = 0
+        private var soundAirpodsDismissId: Int = 0
         private val loadedSoundIds = Collections.synchronizedSet(mutableSetOf<Int>())
         private var pendingSoundId: Int = 0
         private var pendingSoundTimestamp: Long = 0L
+
+        private var autoDismissRunnable: Runnable? = null
 
         fun initSoundPool(context: Context) {
             if (soundPool != null) return
@@ -220,7 +224,7 @@ open class OverlayService : Service() {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
                 soundPool = SoundPool.Builder()
-                    .setMaxStreams(2)
+                    .setMaxStreams(4)
                     .setAudioAttributes(attrs)
                     .build().apply {
                         setOnLoadCompleteListener { _, sampleId, status ->
@@ -232,8 +236,11 @@ open class OverlayService : Service() {
                                 }
                             }
                         }
-                        soundAppearId = load(context.applicationContext, R.raw.sound_appear, 1)
-                        soundDismissId = load(context.applicationContext, R.raw.sound_dismiss, 1)
+                        val appContext = context.applicationContext
+                        soundIosAppearId = load(appContext, R.raw.sound_appear, 1)
+                        soundIosDismissId = load(appContext, R.raw.sound_dismiss, 1)
+                        soundAirpodsAppearId = load(appContext, R.raw.sound_airpods_open, 1)
+                        soundAirpodsDismissId = load(appContext, R.raw.sound_airpods_close, 1)
                     }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to init SoundPool", e)
@@ -256,6 +263,79 @@ open class OverlayService : Service() {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Error playing sound $soundId", e)
+            }
+        }
+
+        fun playPreviewEffect(context: Context, profile: Int) {
+            initSoundPool(context)
+            when (profile) {
+                MainActivity.SOUND_PROFILE_IOS -> {
+                    playSound(soundIosAppearId, context)
+                    triggerTapticEngineHaptic(context)
+                }
+                MainActivity.SOUND_PROFILE_AIRPODS -> {
+                    playSound(soundAirpodsAppearId, context)
+                    triggerTapticEngineHaptic(context)
+                }
+                MainActivity.SOUND_PROFILE_VIBRATION -> {
+                    triggerTapticEngineHaptic(context)
+                }
+                MainActivity.SOUND_PROFILE_SILENT -> {}
+            }
+        }
+
+        private fun playAppearEffects(context: Context) {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val profile = prefs.getInt(MainActivity.KEY_SOUND_PROFILE, MainActivity.DEFAULT_SOUND_PROFILE)
+            when (profile) {
+                MainActivity.SOUND_PROFILE_IOS -> {
+                    playSound(soundIosAppearId, context)
+                    triggerTapticEngineHaptic(context)
+                }
+                MainActivity.SOUND_PROFILE_AIRPODS -> {
+                    playSound(soundAirpodsAppearId, context)
+                    triggerTapticEngineHaptic(context)
+                }
+                MainActivity.SOUND_PROFILE_VIBRATION -> {
+                    triggerTapticEngineHaptic(context)
+                }
+                MainActivity.SOUND_PROFILE_SILENT -> {}
+            }
+        }
+
+        private fun playDismissEffects(context: Context) {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val profile = prefs.getInt(MainActivity.KEY_SOUND_PROFILE, MainActivity.DEFAULT_SOUND_PROFILE)
+            when (profile) {
+                MainActivity.SOUND_PROFILE_IOS -> {
+                    playSound(soundIosDismissId, context)
+                }
+                MainActivity.SOUND_PROFILE_AIRPODS -> {
+                    playSound(soundAirpodsDismissId, context)
+                }
+                MainActivity.SOUND_PROFILE_VIBRATION -> {
+                    triggerSingleClickHaptic(context)
+                }
+                MainActivity.SOUND_PROFILE_SILENT -> {}
+            }
+        }
+
+        private fun scheduleAutoDismiss(context: Context) {
+            cancelAutoDismiss()
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val timeoutSec = prefs.getInt(MainActivity.KEY_OVERLAY_TIMEOUT_SEC, MainActivity.DEFAULT_OVERLAY_TIMEOUT_SEC)
+            val timeoutMs = timeoutSec.coerceIn(2, 30) * 1000L
+            val runnable = Runnable {
+                dismissAllAnimated()
+            }
+            autoDismissRunnable = runnable
+            mainHandler.postDelayed(runnable, timeoutMs)
+        }
+
+        private fun cancelAutoDismiss() {
+            autoDismissRunnable?.let {
+                mainHandler.removeCallbacks(it)
+                autoDismissRunnable = null
             }
         }
 
@@ -335,7 +415,9 @@ open class OverlayService : Service() {
             val tvBatteryPercent = overlayView.findViewById<TextView>(R.id.tvBatteryPercent)
             val btnDone = overlayView.findViewById<TextView>(R.id.btnDone)
 
-            tvDeviceName.text = "Honor Earbuds X5 Pro"
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val savedName = prefs.getString(MainActivity.KEY_SAVED_NAME, null)?.takeIf { it.isNotBlank() }
+            tvDeviceName.text = savedName ?: if (deviceName.isNotBlank()) deviceName else "Honor Earbuds X5 Pro"
 
             val initialBattery = if (batteryLevel in 0..100) {
                 currentBatteryLevel = batteryLevel
@@ -367,7 +449,6 @@ open class OverlayService : Service() {
             }
 
             btnDone.setOnClickListener {
-                triggerSingleClickHaptic(context)
                 dismissViewAnimated(overlayView)
             }
 
@@ -376,6 +457,7 @@ open class OverlayService : Service() {
             cardRoot.setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        cancelAutoDismiss()
                         startY = event.rawY
                         isDragging = true
                         true
@@ -392,13 +474,16 @@ open class OverlayService : Service() {
                         if (isDragging) {
                             isDragging = false
                             val currentTransY = view.translationY
-                            if (currentTransY > 120f) {
-                                dismissViewAnimated(overlayView)
+                            if (currentTransY > 100f) {
+                                dismissViewSwipeDown(overlayView)
                             } else {
                                 view.animate()
                                     .translationY(0f)
                                     .setDuration(200)
                                     .setInterpolator(PathInterpolator(0.2f, 1f, 0.2f, 1f))
+                                    .withEndAction {
+                                        scheduleAutoDismiss(overlayView.context)
+                                    }
                                     .start()
                             }
                         }
@@ -448,9 +533,9 @@ open class OverlayService : Service() {
                 isOverlayShowing = true
                 Log.i(TAG, "Overlay window added to WindowManager. Total active: ${attachedViews.size}")
 
-                playSound(soundAppearId, context)
+                playAppearEffects(context)
                 startSuckAppearanceAnimation(overlayView, cardRoot, measuredW, measuredH, baseElevation)
-                triggerTapticEngineHaptic(context)
+                scheduleAutoDismiss(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to add overlay to WindowManager", e)
                 attachedViews.remove(overlayView)
@@ -584,7 +669,8 @@ open class OverlayService : Service() {
             }
         }
 
-        private fun dismissViewAnimated(overlayView: View) {
+        private fun dismissViewSwipeDown(overlayView: View) {
+            cancelAutoDismiss()
             synchronized(attachedViews) {
                 if (!attachedViews.contains(overlayView)) return
                 if (!dismissingViews.add(overlayView)) return
@@ -595,30 +681,94 @@ open class OverlayService : Service() {
             btnDone?.isClickable = false
             cardRoot?.setOnTouchListener(null)
 
-            playSound(soundDismissId, overlayView.context)
-            startSuckDismissAnimation(overlayView) {
-                try {
-                    if (overlayView.isAttachedToWindow) {
-                        windowManager?.removeView(overlayView)
-                        Log.i(TAG, "Overlay view removed from WindowManager")
+            playDismissEffects(overlayView.context)
+
+            if (cardRoot == null) {
+                safeRemoveView(overlayView)
+                return
+            }
+
+            (overlayView.tag as? ValueAnimator)?.let {
+                it.removeAllListeners()
+                it.cancel()
+            }
+            (cardRoot.tag as? ValueAnimator)?.let {
+                it.removeAllListeners()
+                it.cancel()
+            }
+            cardRoot.animate().cancel()
+
+            val currentTransY = cardRoot.translationY
+            val targetTransY = (overlayView.height.toFloat() + 400f).coerceAtLeast(currentTransY + 800f)
+
+            cardRoot.animate()
+                .translationY(targetTransY)
+                .alpha(0.5f)
+                .setDuration(220)
+                .setInterpolator(PathInterpolator(0.25f, 0.1f, 0.25f, 1.0f))
+                .withEndAction {
+                    safeRemoveView(overlayView)
+                }
+                .start()
+        }
+
+        private fun dismissViewAnimated(overlayView: View) {
+            cancelAutoDismiss()
+            synchronized(attachedViews) {
+                if (!attachedViews.contains(overlayView)) return
+                if (!dismissingViews.add(overlayView)) return
+            }
+
+            val cardRoot = overlayView.findViewById<View>(R.id.cardRoot)
+            val btnDone = overlayView.findViewById<View>(R.id.btnDone)
+            btnDone?.isClickable = false
+            cardRoot?.setOnTouchListener(null)
+
+            playDismissEffects(overlayView.context)
+
+            if (cardRoot != null && cardRoot.translationY > 80f) {
+                val currentTransY = cardRoot.translationY
+                val targetTransY = (overlayView.height.toFloat() + 400f).coerceAtLeast(currentTransY + 800f)
+                cardRoot.animate()
+                    .translationY(targetTransY)
+                    .alpha(0.5f)
+                    .setDuration(220)
+                    .setInterpolator(PathInterpolator(0.25f, 0.1f, 0.25f, 1.0f))
+                    .withEndAction {
+                        safeRemoveView(overlayView)
                     }
-                } catch (e: Exception) {
-                    try {
-                        windowManager?.removeViewImmediate(overlayView)
-                    } catch (_: Exception) {}
-                } finally {
-                    synchronized(attachedViews) {
-                        attachedViews.remove(overlayView)
-                        dismissingViews.remove(overlayView)
-                        if (attachedViews.isEmpty()) {
-                            isOverlayShowing = false
-                        }
+                    .start()
+                return
+            }
+
+            startSuckDismissAnimation(overlayView) {
+                safeRemoveView(overlayView)
+            }
+        }
+
+        private fun safeRemoveView(overlayView: View) {
+            try {
+                if (overlayView.isAttachedToWindow) {
+                    windowManager?.removeView(overlayView)
+                    Log.i(TAG, "Overlay view removed from WindowManager")
+                }
+            } catch (e: Exception) {
+                try {
+                    windowManager?.removeViewImmediate(overlayView)
+                } catch (_: Exception) {}
+            } finally {
+                synchronized(attachedViews) {
+                    attachedViews.remove(overlayView)
+                    dismissingViews.remove(overlayView)
+                    if (attachedViews.isEmpty()) {
+                        isOverlayShowing = false
                     }
                 }
             }
         }
 
         private fun cleanupAllViewsImmediate() {
+            cancelAutoDismiss()
             synchronized(attachedViews) {
                 val iterator = attachedViews.iterator()
                 while (iterator.hasNext()) {
@@ -713,7 +863,6 @@ open class OverlayService : Service() {
                 it.cancel()
             }
             cardRoot.animate().cancel()
-            cardRoot.translationY = 0f
 
             val displayMetrics = overlayView.resources.displayMetrics
             val fallbackW = displayMetrics.widthPixels.toFloat()
@@ -778,11 +927,13 @@ open class OverlayService : Service() {
                 val vibrator = getVibrator(context) ?: return
                 if (!vibrator.hasVibrator()) return
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    val effect = VibrationEffect.startComposition()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && vibrator.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK)) {
+                    val composition = VibrationEffect.startComposition()
                         .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.9f)
-                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.5f, 65)
-                        .compose()
+                    if (vibrator.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_TICK)) {
+                        composition.addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 0.5f, 65)
+                    }
+                    val effect = composition.compose()
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         val attributes = VibrationAttributes.Builder()
@@ -805,12 +956,12 @@ open class OverlayService : Service() {
             }
         }
 
-        private fun triggerSingleClickHaptic(context: Context) {
+        fun triggerSingleClickHaptic(context: Context) {
             try {
                 val vibrator = getVibrator(context) ?: return
                 if (!vibrator.hasVibrator()) return
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && vibrator.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK)) {
                     val effect = VibrationEffect.startComposition()
                         .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.9f)
                         .compose()
